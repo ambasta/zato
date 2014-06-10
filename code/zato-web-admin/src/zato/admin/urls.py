@@ -9,7 +9,7 @@ Licensed under LGPLv3, see LICENSE.txt for terms and conditions.
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 # Django
-from django.conf.urls.defaults import include, patterns, url
+from django.conf.urls import patterns, url, include # noqa
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import login
 
@@ -45,9 +45,6 @@ from zato.admin.web.views.security import apikey, aws, basic_auth, ntlm, oauth, 
 from zato.admin.web.views.security.tls import client_key as tls_client_key
 
 urlpatterns = patterns('',
-
-# ################################################################################################################################
-
     # Main URLs
 
 # ################################################################################################################################
