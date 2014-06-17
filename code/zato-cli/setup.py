@@ -34,7 +34,7 @@ setup(
         'Django>=1.6.5',
         'pyaml>=14.05.7',
         'sarge>=0.1.3',
-        'SQLAlchemy==0.7.4',
+        'SQLAlchemy>=0.7.4',
     ],
 
     zip_safe = False,
