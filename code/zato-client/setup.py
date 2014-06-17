@@ -35,10 +35,11 @@ setup(
       namespace_packages = ['zato'],
       
       install_requires=[
-          'anyjson==0.3.3',
-          'bunch==1.0.1',
-          'lxml==3.3.5',
-          'requests==2.3.0'
+          'anyjson>=0.3.3',
+          'bunch>=1.0.1',
+          'lxml>=3.3.5',
+          'requests>=2.3.0',
+          'zato-common >=2.0,<2.1'
           ],
       
       keywords=('soa eai esb middleware messaging queueing asynchronous integration performance http zeromq framework events agile broker messaging server jms enterprise python middleware clustering amqp nosql websphere mq wmq mqseries ibm amqp zmq'),
