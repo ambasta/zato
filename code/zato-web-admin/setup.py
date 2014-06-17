@@ -17,17 +17,20 @@ execfile(_version_py, _locals)
 version = _locals['version']
 
 setup(
-      name = 'zato-web-admin',
-      version = version,
+    name = 'zato-web-admin',
+    version = version,
 
-      author = 'Zato Developers',
-      author_email = 'info@zato.io',
-      url = 'https://zato.io',
+    author = 'Zato Developers',
+    author_email = 'info@zato.io',
+    url = 'https://zato.io',
 
-      package_dir = {'':'src'},
-      packages = find_packages('src'),
+    package_dir = {'':'src'},
+    packages = find_packages('src'),
 
-      namespace_packages = ['zato'],
+    namespace_packages = ['zato'],
 
-      zip_safe = False,
+    install_requires=[
+        'django-openid-auth>=0.5',
+    ],
+    zip_safe = False,
 )
