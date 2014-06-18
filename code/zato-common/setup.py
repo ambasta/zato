@@ -31,8 +31,8 @@ setup(
 
     package_dir={'': 'src'},
     packages=find_packages('src'),
+    scripts = ['bin/zato-py'],
     namespace_packages=['zato'],
-
     install_requires=[
         'anyjson>=0.3.3',
         'base32-crockford>=0.2.0',
