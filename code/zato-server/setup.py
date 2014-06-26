@@ -29,6 +29,7 @@ setup(
 
     namespace_packages = ['zato'],
     install_requires = [
+        'amqp>=1.4.5',
         'arrow>=0.4.2',
         'crontab>=0.20',
         'dpath>=1.2-70',
