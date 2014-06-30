@@ -22,3 +22,5 @@ hotfixes
 *.egg-info*
 *.*~
 ~
+_version.py
+MANIFEST
