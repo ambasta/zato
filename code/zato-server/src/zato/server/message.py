@@ -267,7 +267,6 @@ class JSONPointerStore(BaseStore):
                 return doc
 
         pointer = self.data[name]
-
         return pointer.set(doc, value, in_place)
 
     def add(self, name, config, *ignored_args, **ignored_kwargs):

@@ -25,7 +25,7 @@ class DictNav(Butler):
         if nested:
             return bool(self.findall(key, True))
 
-        return key in self.obj
+        return key in self.data
 
     def has_path(self, path):
         return super(DictNav, self).path_exists(path)
