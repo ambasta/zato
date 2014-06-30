@@ -49,7 +49,6 @@ class Scheduler(object):
 
     def init(self):
         spawn(self.sched.run)
-
         while not self.sched.ready:
             sleep(0.1)
 
