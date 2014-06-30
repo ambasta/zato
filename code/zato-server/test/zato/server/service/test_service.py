@@ -119,67 +119,6 @@ class TestLogInputOutput(ServiceTestCase):
 
 # ################################################################################################################################
 
-class TestLock(ServiceTestCase):
-    def test_lock_ok(self):
-        """ Succesfully grab a service lock.
-        """ 
-        my_kvdb = FakeKVDB()
-        my_kvdb.conn.setnx_return_value = True
-        
-        lock_name = rand_string()
-        expires = 500 + rand_int() # It's 500 which means DummyService.invoke has that many seconds to complete
-        timeout = rand_int()
-        
-        class DummyService(Service):
-            kvdb = my_kvdb
-            def handle(self):
-                with self.lock(lock_name, expires, timeout):
-                    pass
-                
-        instance = DummyService()
-        instance.handle()
-        
-        eq_(my_kvdb.conn.delete_args, KVDB.LOCK_SERVICE_PREFIX + lock_name)
-        eq_(my_kvdb.conn.expire_args, (KVDB.LOCK_SERVICE_PREFIX + lock_name, expires))
-        
-        # First arg is the lock_name that can ne checked directly but the other
-        # one is the expiration time that we can check only approximately,
-        # anything within 3 seconds range is OK. The value of 3 is the maximum
-        # time allowed for execution of DummyService's invoke method which is
-        # way more than needed but let's use 3 to be on the safe side when the
-        # test is run on a very slow system.
-        eq_(my_kvdb.conn.setnx_args[0], KVDB.LOCK_SERVICE_PREFIX + lock_name)
-        expires_approx = time() + expires
-        self.assertAlmostEquals(my_kvdb.conn.setnx_args[1], expires_approx, delta=3)
-        
-        
-    def test_lock_timeout(self):
-        """ A timeout is caught while trying to obtain a service lock.
-        """
-        my_kvdb = FakeKVDB()
-        my_kvdb.conn.setnx_return_value = False
-        
-        lock_name = rand_string()
-        expires = rand_int()
-        timeout = -1
-        
-        class DummyService(Service):
-            kvdb = my_kvdb
-            def handle(self):
-                with self.lock(lock_name, expires, timeout):
-                    pass
-                
-        instance = DummyService()
-        
-        try:
-            instance.handle()
-        except LockTimeout, e:
-            eq_(e.message, 'Timeout while waiting for lock')
-        else:
-            self.fail('LockTimeout not raised')
-            
-# ################################################################################################################################
-
 class TestHTTPRequestData(TestCase):
     def test_empty(self):
         data = HTTPRequestData()

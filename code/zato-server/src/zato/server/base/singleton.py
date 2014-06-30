@@ -42,8 +42,10 @@ class SingletonServer(BrokerMessageReceiver):
     def run(self, *ignored_args, **kwargs):
         # So that other moving parts - like connector subprocesses - have time
         # to initialize before the singleton server starts the scheduler.
-        self.logger.debug('Sleeping for %s s', self.initial_sleep_time)
-        sleep(self.initial_sleep_time)
+
+        # Leads to blocked IO against logs, disabled until resolved
+        # self.logger.debug('Sleeping for %s s', self.initial_sleep_time)
+        # sleep(self.initial_sleep_time)
 
         for name in('broker_client',):
             if name in kwargs:
