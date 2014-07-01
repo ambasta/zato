@@ -20,7 +20,7 @@
 {% endblock %}
 
 {% block content %}
-<h2 class="zato"><a href="{% url pattern-delivery %}?cluster={{ cluster_id }}&amp;target_type={{ item.target_type }}">Guaranteed delivery</a>{% if has_item %} : {{ item.task_id }} : {{ item.state }}{% endif %}</h2>
+<h2 class="zato"><a href="{% url 'pattern-delivery' %}?cluster={{ cluster_id }}&amp;target_type={{ item.target_type }}">Guaranteed delivery</a>{% if has_item %} : {{ item.task_id }} : {{ item.state }}{% endif %}</h2>
 
 {% if has_item %}
 
