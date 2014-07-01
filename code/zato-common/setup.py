@@ -34,6 +34,7 @@ setup(
         'boto>=2.29.1',
         'bunch>=1.0.1',
         'bzr>=2.5',
+        'candv>=1.1.1',
         'configobj>=5.0.5',
         'datadiff>=1.1.5',
         'distutils2>=1.0a4',
