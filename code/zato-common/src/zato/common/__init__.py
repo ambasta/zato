@@ -10,6 +10,8 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 # stdlib
 import os
+import pkg_resources
+
 from collections import OrderedDict
 from cStringIO import StringIO
 from httplib import responses
@@ -34,12 +36,8 @@ from lxml.objectify import ObjectPath as _ObjectPath
 # ##############################################################################
 # Version
 # ##############################################################################
-
-curdir = os.path.dirname(os.path.abspath(__file__))
-_version_py = os.path.normpath(os.path.join(curdir, '..', '..', '..', '..', '.version.py'))
-_locals = {}
-execfile(_version_py, _locals)
-version = _locals['version']
+version = pkg_resources.get_distribution('zato-common').version
+_locals = {'version': version}
 
 # The namespace for use in all Zato's own services.
 zato_namespace = 'https://zato.io/ns/20130518'
