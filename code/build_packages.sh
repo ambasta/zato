@@ -25,6 +25,17 @@ fi
 echo
 echo
 
+# Uninstall django_openid_auth
+echo -e "${NC}Uninstalling django_openid_auth"
+if pip uninstall django_openid_auth -y &>/dev/null; then
+    echo -e "${AC}[OK]"
+else
+    echo -e "${NC}Package is not installed. Continuing anyways.${WC}[WARN]"
+fi
+
+echo
+echo
+
 echo -e "${NC}Building packages:"
 echo -e "${PC}${packages[*]}"
 
@@ -78,9 +89,10 @@ for package in "${packages[@]}"
 
         # Install distributable
         echo -e "${NC}Installing distributable"
-        if pip install -q dist/* &>/dev/null; then
+        if output=$(pip install -q dist/*); then
             echo -e "${AC}[OK]"
         else
+            echo ${output}
             echo -e "${NC}Install broken. Kindly report to upstream. ${EC}[ERROR]"
             exit
         fi
@@ -95,3 +107,18 @@ for package in "${packages[@]}"
         echo
         echo
     done
+
+# Patch django_openid_auth
+echo -e "${NC}Patching django_openid_auth"
+if ! openid_path=$(python -c 'import django_openid_auth; print(django_openid_auth.__path__[0])'); then
+    echo -e "${NC}Unable to find the path to django_openid_auth. Kindly report to upstream. ${EC}[ERROR]"
+fi
+if ! output=$(patch -N "${openid_path}/urls.py" < patches/django_openid_django_1_6.patch); then
+    echo -e "${NC}Unable to patch django_openid_auth. Kindly report to upstream. ${EC}[ERROR]"
+fi
+
+echo
+echo
+echo
+
+echo -e "${NC}All Done. ${AC}[OK]${NC}"
