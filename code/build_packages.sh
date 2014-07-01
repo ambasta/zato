@@ -3,7 +3,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "${DIR}"
 
-packages=( */ )
+packages=("zato-common" "zato-server" "zato-client" "zato-agent" "zato-broker" "zato-cli" "zato-web-admin")
 
 PC='\e[0;34m'       # Blue      - Package
 EC='\e[0;31m'       # Red       - Error
@@ -11,6 +11,19 @@ WC='\e[1;33m'       # Yellow    - Warn
 AC='\e[0;32m'       # Green     - Accept
 NC='\e[0m'          # No color
 # COL=$(tput cols)    # Number of columns
+
+
+# Install build dependencies
+echo -e "${NC}Installing Global Dependencies"
+if output=(pip install hgdistver numpy -q); then
+    echo -e "${AC}[OK]"
+else
+    echo -e "${NC}${output}"
+    echo -e "${NC}Unable to install global dependencies${EC}[ERROR]"
+fi
+
+echo
+echo
 
 echo -e "${NC}Building packages:"
 echo -e "${PC}${packages[*]}"
