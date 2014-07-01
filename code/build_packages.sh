@@ -1,21 +1,21 @@
 #!/bin/bash
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd $DIR
+cd "${DIR}"
 
-packages=`echo */`
+packages=( */ )
 
 PC='\e[0;34m'       # Blue      - Package
 EC='\e[0;31m'       # Red       - Error
 WC='\e[1;33m'       # Yellow    - Warn
 AC='\e[0;32m'       # Green     - Accept
 NC='\e[0m'          # No color
-COL=$(tput cols)    # Number of columns
+# COL=$(tput cols)    # Number of columns
 
 echo -e "${NC}Building packages:"
-echo -e "${PC}${packages}"
+echo -e "${PC}${packages[*]}"
 
-for package in $packages
+for package in "${packages[@]}"
     do
         echo
         echo
@@ -23,7 +23,7 @@ for package in $packages
 
         # Move to package directory
         echo -e "${NC}Changing directory to ${PC}${package}"
-        if ! output=$(cd $package); then
+        if ! cd "${package}"; then
             echo -e "${NC}Ensure that you're in the code directory in repo${EC}[ERROR]"
             exit
         else
@@ -34,7 +34,7 @@ for package in $packages
 
         # Uninstall older package
         echo -e "${NC}Uninstalling ${PC}${package}"
-        if output=$(pip uninstall $package -y); then
+        if pip uninstall $package -y &>/dev/null; then
             echo -e "${AC}[OK]"
         else
             echo -e "${NC}Package is not installed. Continuing anyways.${WC}[WARN]"
@@ -44,7 +44,7 @@ for package in $packages
 
         # Delete existing distributions
         echo -e "${NC}Deleting dist folder"
-        if output=$(rm -fR dist); then
+        if rm -fR dist; then
             echo -e "${AC}[OK]"
         else
             echo -e "${NC}No dist directory found. Continuing anyways.${WC}[WARN]"
@@ -54,9 +54,10 @@ for package in $packages
 
         # Build distributable
         echo -e "${NC}Building distributable"
-        if output=$(python setup.py sdist -q > /dev/null); then
+        if python setup.py sdist -q &>/dev/null; then
             echo -e "${AC}[OK]"
         else
+            echo $output
             echo -e "${NC}Build broken. Kindly report to upstream. ${EC}[ERROR]"
             exit
         fi
@@ -65,7 +66,7 @@ for package in $packages
 
         # Install distributable
         echo -e "${NC}Installing distributable"
-        if output=$(pip install -q dist/*); then
+        if pip install -q dist/* &>/dev/null; then
             echo -e "${AC}[OK]"
         else
             echo -e "${NC}Install broken. Kindly report to upstream. ${EC}[ERROR]"
