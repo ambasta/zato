@@ -57,7 +57,6 @@ for package in "${packages[@]}"
         if python setup.py sdist -q &>/dev/null; then
             echo -e "${AC}[OK]"
         else
-            echo $output
             echo -e "${NC}Build broken. Kindly report to upstream. ${EC}[ERROR]"
             exit
         fi
