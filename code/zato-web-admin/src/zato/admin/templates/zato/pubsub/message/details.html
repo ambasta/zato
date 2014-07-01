@@ -4,7 +4,7 @@
 
 
 {% block content %}
-<h2 class="zato">Pub/sub : <a href="{% url pubsub-topics %}?cluster={{ cluster_id }}" class="common">Topics</a> : Messages : {{ topic_name }} : {{ msg_id }}
+<h2 class="zato">Pub/sub : <a href="{% url 'pubsub-topics' %}?cluster={{ cluster_id }}" class="common">Topics</a> : Messages : {{ topic_name }} : {{ msg_id }}
     {% ifequal source_type 'consumer-queue' %}: Consumer : {{ sub_key }}{% endifequal %}</h2>
 
 

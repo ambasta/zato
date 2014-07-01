@@ -160,7 +160,8 @@
                         <li>
                             <span class="like-a">Queries &rarr;</span>
                             <ul>
-                                <li class='wide'><a href="{% url query-cassandra %}?cluster={{ cluster_id|default:'' }}">Cassandra</a></li>
+                                <li class='wide'><a href="{% url 'query-cassandra' %}?cluster={{ cluster_id|default:'' }}">Cassandra</a></li>
+                                <li class='wide'><a href="{% url 'search-es' %}?cluster={{ cluster_id|default:'' }}">ElasticSearch</a></li>
                             </ul>
                         </li>
                     </ul>
