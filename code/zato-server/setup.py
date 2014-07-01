@@ -30,6 +30,8 @@ setup(
     install_requires = [
         'amqp>=1.4.5',
         'arrow>=0.4.2',
+        'blist>=1.3.6',
+        'cassandra-driver>=2.0.2',
         'crontab>=0.20',
         'dpath>=1.2-70',
         'faulthandler>=2.3',
