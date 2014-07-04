@@ -1,0 +1,31 @@
+--- hgdistver.py	2014-07-04 15:30:56.587811824 +0530
++++ hgdistver.py.new	2014-07-04 15:32:22.930718945 +0530
+@@ -13,6 +13,8 @@
+ import shlex
+ import subprocess
+ import datetime
++from subprocess import call, STDOUT
++
+ 
+ 
+ def trace_debug(*k):
+@@ -169,8 +171,9 @@
+ 
+ 
+ def version_from_git(root, cachefile=None):
+-    if not os.path.exists(os.path.join(root, '.git')):
++    if call(["git", "status"], stderr=STDOUT, stdout=open(os.devnull, 'w')) != 0:
+         return
++
+     rev_node, _, ret = do_ex('git rev-parse --verify --quiet HEAD', root)
+     if ret:
+         return _version('0.0')
+@@ -190,7 +193,7 @@
+     if '-' not in out:
+         return _version(out, node=rev_node, dirty=dirty)
+     else:
+-        tag, number, node = out.split('-')
++        tag, number, node = out.rsplit('-', 2)
+         return _version(tag, distance=number, node=node, dirty=dirty)
+ 
+ 

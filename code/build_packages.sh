@@ -1,7 +1,16 @@
 #!/bin/bash
 
+echo "Zato requires the following global packages: [haproxy]. Please ensure that they are installed before you start the server."
+
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "${DIR}"
+
+HOMEDIR="$(getent passwd $USER | awk -F ':' '{print $6}')"
+BUILD_DIR="$(HOMEDIR)/zato-builder"
+
+if [ ! -d "config" ]; then
+    mkdir "${BUILD_DIR}"
+fi
 
 packages=("zato-common" "zato-server" "zato-client" "zato-agent" "zato-broker" "zato-cli" "zato-web-admin")
 
@@ -12,26 +21,64 @@ AC='\e[0;32m'       # Green     - Accept
 NC='\e[0m'          # No color
 # COL=$(tput cols)    # Number of columns
 
+CACHE_DIR="${BUILD_DIR}/pip_cache"
+LOGFILE="${BUILD_DIR}/build.log"
+
+function usage
+{
+    echo "usage: build_packages [[-l file] | [-c cache_dir ] | [-h]]"
+}
+
+while [ "$1" != "" ]; do
+    case $1 in
+        -l | --logfile )    shift
+                            LOGFILE=$1
+                            ;;
+        -c | --cache-dir )  shift
+                            CACHE_DIR=$1
+                            ;;
+        -h | --help )       usage
+                            exit
+                            ;;
+        * )                 usage
+                            exit 1
+    esac
+    shift
+done
+
+PIP_INSTALL_PARAMS="--download-cache=${CACHE_DIR}"
 
 # Install build dependencies
 echo -e "${NC}Installing Global Dependencies"
-if output=(pip install hgdistver numpy -q); then
+
+if pip install "${PIP_INSTALL_PARAMS}" hgdistver numpy 1>>"${LOGFILE}" 2>&1; then
     echo -e "${AC}[OK]"
 else
-    echo -e "${NC}${output}"
     echo -e "${NC}Unable to install global dependencies${EC}[ERROR]"
+    echo -e "${NC}Kindly refer ${LOGFILE} or report to upstream with the same attached."
 fi
+
+echo
+echo
+
+echo -e "${NC}Patching hgdistver"
+if ! hgdistver_path=$(python -c 'import hgdistver; print(hgdistver.__file__[:-1])'); then
+    echo -e "${NC}Unable to find the path to django_openid_auth. Kindly report to upstream. ${EC}[ERROR]"
+fi
+if ! patch -N ${hgdistver_path} < patches/hgdistver_git_fixes.patch 1>>"${LOGFILE}" 2>&1; then
+    echo -e "${NC}Unable to patch hgdistver. Kindly report to upstream. ${EC}[ERROR]"
+fi
+echo -e "${AC}[OK]"
 
 echo
 echo
 
 # Uninstall django_openid_auth
 echo -e "${NC}Uninstalling django_openid_auth"
-if pip uninstall django_openid_auth -y &>/dev/null; then
-    echo -e "${AC}[OK]"
-else
-    echo -e "${NC}Package is not installed. Continuing anyways.${WC}[WARN]"
+if ! pip uninstall django_openid_auth -y 1>>"${LOGFILE}" 2>&1; then
+    echo -e "${NC}Package is not installed. Continuing anyways.${AC}[OK]"
 fi
+echo -e "${AC}[OK]"
 
 echo
 echo
@@ -58,7 +105,7 @@ for package in "${packages[@]}"
 
         # Uninstall older package
         echo -e "${NC}Uninstalling ${PC}${package}"
-        if pip uninstall $package -y &>/dev/null; then
+        if pip uninstall "${package}" -y 1>>"${LOGFILE}" 2>&1; then
             echo -e "${AC}[OK]"
         else
             echo -e "${NC}Package is not installed. Continuing anyways.${WC}[WARN]"
@@ -78,10 +125,10 @@ for package in "${packages[@]}"
 
         # Build distributable
         echo -e "${NC}Building distributable"
-        if python setup.py sdist -q &>/dev/null; then
+        if python setup.py sdist 1>>"${LOGFILE}" 2>&1; then
             echo -e "${AC}[OK]"
         else
-            echo -e "${NC}Build broken. Kindly report to upstream. ${EC}[ERROR]"
+            echo -e "${NC}Build broken. Kindly report to upstream with ${LOGFILE}. ${EC}[ERROR]"
             exit
         fi
 
@@ -89,11 +136,10 @@ for package in "${packages[@]}"
 
         # Install distributable
         echo -e "${NC}Installing distributable"
-        if output=$(pip install -q dist/*); then
+        if pip install "${PIP_INSTALL_PARAMS}" dist/* 1>>"${LOGFILE}" 2>&1; then
             echo -e "${AC}[OK]"
         else
-            echo ${output}
-            echo -e "${NC}Install broken. Kindly report to upstream. ${EC}[ERROR]"
+            echo -e "${NC}Install broken. Kindly report to upstream with ${LOGFILE}. ${EC}[ERROR]"
             exit
         fi
 
@@ -113,7 +159,7 @@ echo -e "${NC}Patching django_openid_auth"
 if ! openid_path=$(python -c 'import django_openid_auth; print(django_openid_auth.__path__[0])'); then
     echo -e "${NC}Unable to find the path to django_openid_auth. Kindly report to upstream. ${EC}[ERROR]"
 fi
-if ! output=$(patch -N "${openid_path}/urls.py" < patches/django_openid_django_1_6.patch); then
+if ! patch -N ${openid_path}/urls.py < patches/django_openid_django_1_6.patch 1>>"${LOGFILE}" 2>&1; then
     echo -e "${NC}Unable to patch django_openid_auth. Kindly report to upstream. ${EC}[ERROR]"
 fi
 
