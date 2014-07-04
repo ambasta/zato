@@ -6,7 +6,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "${DIR}"
 
 HOMEDIR="$(getent passwd $USER | awk -F ':' '{print $6}')"
-BUILD_DIR="$(HOMEDIR)/zato-builder"
+BUILD_DIR="${HOMEDIR}/.zato-builder"
 
 if [ ! -d "config" ]; then
     mkdir "${BUILD_DIR}"
