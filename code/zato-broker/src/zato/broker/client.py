@@ -191,7 +191,7 @@ def BrokerClient(kvdb, client_type, topic_callbacks, _initial_lua_programs):
                     callback = self.topic_callbacks[msg.channel]
                     spawn(callback, payload)
                     # Sleep for a short while so that callback is activated
-                    sleep(0)
+                    sleep(2)
 
                 else:
                     if logger.isEnabledFor(logging.DEBUG):
