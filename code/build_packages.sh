@@ -51,6 +51,11 @@ PIP_INSTALL_PARAMS="--download-cache=${CACHE_DIR}"
 # Install build dependencies
 echo -e "${NC}Installing Global Dependencies"
 
+echo -e "${NC}Uninstalling hgdistver"
+if pip uninstall -y hgdistver 1>>"${LOGFILE}" 2>&1; then
+    echo -e "${AC}[OK]"
+fi
+
 if pip install "${PIP_INSTALL_PARAMS}" hgdistver numpy 1>>"${LOGFILE}" 2>&1; then
     echo -e "${AC}[OK]"
 else
@@ -67,6 +72,8 @@ if ! hgdistver_path=$(python -c 'import hgdistver; print(hgdistver.__file__[:-1]
 fi
 if ! patch -N ${hgdistver_path} < patches/hgdistver_git_fixes.patch 1>>"${LOGFILE}" 2>&1; then
     echo -e "${NC}Unable to patch hgdistver. Kindly report to upstream. ${EC}[ERROR]"
+else
+    rm "${hgdistver_path}c"
 fi
 echo -e "${AC}[OK]"
 
