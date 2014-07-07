@@ -44,8 +44,8 @@ class SingletonServer(BrokerMessageReceiver):
         # to initialize before the singleton server starts the scheduler.
 
         # Leads to blocked IO against logs, disabled until resolved
-        # self.logger.debug('Sleeping for %s s', self.initial_sleep_time)
-        # sleep(self.initial_sleep_time)
+        self.logger.debug('Sleeping for %s s', self.initial_sleep_time)
+        sleep(self.initial_sleep_time)
 
         for name in('broker_client',):
             if name in kwargs:
