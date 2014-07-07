@@ -36,7 +36,7 @@ setup(
         'bunch>=1.0.1',
         'lxml>=3.3.5',
         'requests>=2.3.0',
-        'zato-common >=2.0.dev0,<2.1'
+        'zato-common >=1.9,<2.1'
     ],
     keywords=('soa eai esb middleware messaging queueing asynchronous integration performance http zeromq framework events agile broker messaging server jms enterprise python middleware clustering amqp nosql websphere mq wmq mqseries ibm amqp zmq'),
     classifiers = [
