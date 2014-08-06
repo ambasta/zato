@@ -32,7 +32,7 @@ class _WebAdminAuthCommand(ManageCommand):
         self.logger.info('OK')
 
 # ################################################################################################################################
-        
+
 class CreateUser(_WebAdminAuthCommand):
     """ Creates a new web admin user
     """
@@ -68,7 +68,7 @@ class UpdatePassword(_WebAdminAuthCommand):
         self._prepare(args)
 
         from django.contrib.auth.management.commands.changepassword import Command
-        Command().handle(args.username)
+        Command().execute(args.username)
 
         self._ok(args)
 
