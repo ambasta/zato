@@ -56,7 +56,7 @@ from zato.common import ACCESS_LOG_DT_FORMAT, CHANNEL, KVDB, MISC, SERVER_JOIN_S
 from zato.common.broker_message import AMQP_CONNECTOR, code_to_name, HOT_DEPLOY,\
      JMS_WMQ_CONNECTOR, MESSAGE_TYPE, SERVICE, TOPICS, ZMQ_CONNECTOR
 from zato.common.pubsub import PubSubAPI, RedisPubSub
-from zato.common.util import add_startup_jobs, get_kvdb_config_for_log, new_cid, register_diag_handlers
+from zato.common.util import add_startup_jobs, get_kvdb_config_for_log, new_cid, StaticConfig, register_diag_handlers
 from zato.server.base import BrokerMessageReceiver
 from zato.server.base.worker import WorkerStore
 from zato.server.config import ConfigDict, ConfigStore
@@ -93,6 +93,7 @@ class ParallelServer(DisposableObject, BrokerMessageReceiver):
         self.service_modules = None # Set programmatically in Spring
         self.service_sources = None # Set in a config file
         self.base_dir = None
+        self.tls_dir = None
         self.hot_deploy_config = None
         self.pickup = None
         self.fs_server_config = None
@@ -108,7 +109,12 @@ class ParallelServer(DisposableObject, BrokerMessageReceiver):
         self.app_context = None
         self.has_gevent = None
         self.delivery_store = None
+        self.static_config = None
         self.client_address_headers = ['HTTP_X_ZATO_FORWARDED_FOR', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR']
+
+        # Allows users store arbitrary data across service invocations
+        self.user_ctx = Bunch()
+        self.user_ctx_lock = gevent.lock.RLock()
 
         self.access_logger = logging.getLogger('zato_access_log')
 
@@ -283,6 +289,9 @@ class ParallelServer(DisposableObject, BrokerMessageReceiver):
         """
         self.worker_store = WorkerStore(self.config, self)
 
+        # Static config files
+        self.static_config = StaticConfig(os.path.join(self.repo_location, 'static'))
+
         # Key-value DB
         kvdb_config = get_kvdb_config_for_log(self.fs_server_config.kvdb)
         kvdb_logger.info('Worker config `%s`', kvdb_config)
@@ -390,6 +399,9 @@ class ParallelServer(DisposableObject, BrokerMessageReceiver):
         query = self.odb.get_search_es_list(server.cluster.id, True)
         self.config.search_es = ConfigDict.from_query('search_es', query)
 
+        query = self.odb.get_search_solr_list(server.cluster.id, True)
+        self.config.search_solr = ConfigDict.from_query('search_solr', query)
+
         # 
         # Search - end
         #
@@ -455,8 +467,12 @@ class ParallelServer(DisposableObject, BrokerMessageReceiver):
         #
 
         # OpenStack Swift
-        query = self.odb.get_notif_cloud_openstack_swift(server.cluster.id, True)
+        query = self.odb.get_notif_cloud_openstack_swift_list(server.cluster.id, True)
         self.config.notif_cloud_openstack_swift = ConfigDict.from_query('notif_cloud_openstack_swift', query)
+
+        # SQL
+        query = self.odb.get_notif_sql_list(server.cluster.id, True)
+        self.config.notif_sql = ConfigDict.from_query('notif_sql', query)
 
         #
         # Notifications - end
@@ -495,6 +511,10 @@ class ParallelServer(DisposableObject, BrokerMessageReceiver):
         # Technical accounts
         query = self.odb.get_tech_acc_list(server.cluster.id, True)
         self.config.tech_acc = ConfigDict.from_query('tech_acc', query)
+
+        # TLS key/cert pairs
+        query = self.odb.get_tls_key_cert_list(server.cluster.id, True)
+        self.config.tls_key_cert = ConfigDict.from_query('tls_key_cert', query)
 
         # WS-Security
         query = self.odb.get_wss_list(server.cluster.id, True)
@@ -565,6 +585,14 @@ class ParallelServer(DisposableObject, BrokerMessageReceiver):
 
         query = self.odb.get_pubsub_consumer_list(server.cluster.id, True)
         self.config.pubsub.consumers = ConfigDict.from_query('pubsub_consumers', query, list_config=True)
+
+        # E-mail - SMTP
+        query = self.odb.get_email_smtp_list(server.cluster.id, True)
+        self.config.email_smtp = ConfigDict.from_query('email_smtp', query)
+
+        # E-mail - IMAP
+        query = self.odb.get_email_imap_list(server.cluster.id, True)
+        self.config.email_imap = ConfigDict.from_query('email_imap', query)
 
         # Assign config to worker
         self.worker_store.worker_config = self.config

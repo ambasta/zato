@@ -32,20 +32,24 @@ from gunicorn.workers.ggevent import GeventWorker as GunicornGeventWorker
 from gunicorn.workers.sync import SyncWorker as GunicornSyncWorker
 
 # Zato
-from zato.common import CHANNEL, DATA_FORMAT, HTTP_SOAP_SERIALIZATION_TYPE, MSG_PATTERN_TYPE, PUB_SUB, SEC_DEF_TYPE, SIMPLE_IO, \
-     TRACE1, ZATO_ODB_POOL_NAME
-from zato.common.broker_message import code_to_name, SERVICE, STATS
+from zato.common import CHANNEL, DATA_FORMAT, HTTP_SOAP_SERIALIZATION_TYPE, MSG_PATTERN_TYPE, NOTIF, PUB_SUB, SEC_DEF_TYPE, \
+     SIMPLE_IO, TRACE1, ZATO_ODB_POOL_NAME
+from zato.common import broker_message
+from zato.common.broker_message import code_to_name
+from zato.common.dispatch import dispatcher
 from zato.common.pubsub import Client, Consumer, Topic
-from zato.common.util import new_cid, pairwise, parse_extra_into_dict
+from zato.common.util import new_cid, pairwise, parse_extra_into_dict, get_validate_tls_key_cert
 from zato.server.base import BrokerMessageReceiver
 from zato.server.connection.cassandra import CassandraAPI, CassandraConnStore
 from zato.server.connection.cloud.aws.s3 import S3Wrapper
 from zato.server.connection.cloud.openstack.swift import SwiftWrapper
+from zato.server.connection.email import IMAPAPI, IMAPConnStore, SMTPAPI, SMTPConnStore
 from zato.server.connection.ftp import FTPStore
 from zato.server.connection.http_soap.channel import RequestDispatcher, RequestHandler
 from zato.server.connection.http_soap.outgoing import HTTPSOAPWrapper, SudsSOAPWrapper
 from zato.server.connection.http_soap.url_data import URLData
 from zato.server.connection.search.es import ElasticSearchAPI, ElasticSearchConnStore
+from zato.server.connection.search.solr import SolrAPI, SolrConnStore
 from zato.server.connection.sql import PoolStore, SessionWrapper
 from zato.server.message import JSONPointerStore, NamespaceStore, XPathStore
 from zato.server.query import CassandraQueryAPI, CassandraQueryStore
@@ -103,6 +107,11 @@ class WorkerStore(BrokerMessageReceiver):
 
         # Search
         self.search_es_api = ElasticSearchAPI(ElasticSearchConnStore())
+        self.search_solr_api = SolrAPI(SolrConnStore())
+
+        # E-mail
+        self.email_smtp_api = SMTPAPI(SMTPConnStore())
+        self.email_imap_api = IMAPAPI(IMAPConnStore())
 
         # Message-related config - init_msg_ns_store must come before init_xpath_store
         # so the latter has access to the former's namespace map.
@@ -112,7 +121,12 @@ class WorkerStore(BrokerMessageReceiver):
 
         self.init_cassandra()
         self.init_cassandra_queries()
+
         self.init_search_es()
+        self.init_search_solr()
+
+        self.init_email_smtp()
+        self.init_email_imap()
 
         # Request dispatcher - matches URLs, checks security and dispatches HTTP
         # requests to services.
@@ -122,7 +136,8 @@ class WorkerStore(BrokerMessageReceiver):
             self.server.odb.get_url_security(self.server.cluster_id, 'channel')[0],
             self.worker_config.basic_auth, self.worker_config.ntlm, self.worker_config.oauth, self.worker_config.tech_acc,
             self.worker_config.wss, self.worker_config.apikey, self.worker_config.aws, self.worker_config.openstack_security,
-            self.worker_config.xpath_sec, self.kvdb, self.broker_client, self.server.odb, self.json_pointer_store, self.xpath_store)
+            self.worker_config.xpath_sec, self.worker_config.tls_key_cert, self.kvdb, self.broker_client, self.server.odb,
+            self.json_pointer_store, self.xpath_store)
 
         self.request_dispatcher.request_handler = RequestHandler(self.server)
 
@@ -140,6 +155,9 @@ class WorkerStore(BrokerMessageReceiver):
     def filter(self, msg):
         # TODO: Fix it, worker doesn't need to accept all the messages
         return True
+
+    def _update_queue_build_cap(self, item):
+        item.queue_build_cap = float(self.server.fs_server_config.misc.queue_build_cap)
 
     def _update_aws_config(self, msg):
         """ Parses the address to AWS we store into discrete components S3Connection objects expect.
@@ -178,10 +196,15 @@ class WorkerStore(BrokerMessageReceiver):
 
         if _sec_config:
             sec_config['sec_type'] = _sec_config['sec_type']
-            sec_config['username'] = _sec_config['username']
-            sec_config['password'] = _sec_config['password']
+            sec_config['username'] = _sec_config.get('username')
+            sec_config['password'] = _sec_config.get('password')
             sec_config['password_type'] = _sec_config.get('password_type')
             sec_config['salt'] = _sec_config.get('salt')
+
+            if sec_config['sec_type'] == SEC_DEF_TYPE.TLS_KEY_CERT:
+                tls = self.request_dispatcher.url_data.tls_key_cert_get(security_name)
+                _, _, full_path = get_validate_tls_key_cert(self.server.tls_dir, tls.config.fs_name)
+                sec_config['tls_key_cert_full_path'] = full_path
 
         wrapper_config = {'id':config.id,
             'is_active':config.is_active, 'method':config.method,
@@ -275,6 +298,36 @@ class WorkerStore(BrokerMessageReceiver):
         for config_dict in self.worker_config.notif_cloud_openstack_swift.values():
             self._update_cloud_openstack_swift_container(config_dict.config)
 
+    def get_notif_config(self, notif_type, name):
+        config_dict = {
+            NOTIF.TYPE.OPENSTACK_SWIFT: self.worker_config.notif_cloud_openstack_swift,
+            NOTIF.TYPE.SQL: self.worker_config.notif_sql,
+        }[notif_type]
+
+        return config_dict.get(name)
+
+    def create_edit_notifier(self, msg, action, config_dict, update_func=None):
+
+        # It might be a rename
+        old_name = msg.get('old_name')
+        del_name = old_name if old_name else msg.name
+
+        config_dict.pop(del_name, None) # Delete and ignore if it doesn't exit (it's CREATE then)
+        config_dict[msg.name] = Bunch()
+        config_dict[msg.name].config = msg
+
+        if update_func:
+            update_func(msg)
+
+        # Start a new background notifier either if it's a create action or on rename.
+        if msg.source_service_type == 'create' or (old_name and old_name != msg.name):
+
+            self._on_message_invoke_service({
+                'service': 'zato.notif.invoke-run-notifier',
+                'payload': {'config': msg},
+                'cid': new_cid(),
+            }, CHANNEL.NOTIFIER_RUN, action)
+
 # ################################################################################################################################
 
     def init_cassandra(self):
@@ -296,12 +349,33 @@ class WorkerStore(BrokerMessageReceiver):
 
 # ################################################################################################################################
 
-    def init_search_es(self):
-        for k, v in self.worker_config.search_es.items():
+    def init_simple(self, config, api, name):
+        for k, v in config.items():
+            self._update_queue_build_cap(v.config)
             try:
-                self.search_es_api.create(k, v.config)
+                api.create(k, v.config)
             except Exception, e:
-                logger.warn('Could not create an ElasticSearch connection `%s`, e:`%s`', k, format_exc(e))
+                logger.warn('Could not create {} connection `%s`, e:`%s`'.format(name), k, format_exc(e))
+
+# ################################################################################################################################
+
+    def init_search_es(self):
+        self.init_simple(self.worker_config.search_es, self.search_es_api, 'an ElasticSearch')
+
+# ################################################################################################################################
+
+    def init_search_solr(self):
+        self.init_simple(self.worker_config.search_solr, self.search_solr_api, 'a Solr')
+
+# ################################################################################################################################
+
+    def init_email_smtp(self):
+        self.init_simple(self.worker_config.email_smtp, self.email_smtp_api, 'an SMTP')
+
+# ################################################################################################################################
+
+    def init_email_imap(self):
+        self.init_simple(self.worker_config.email_imap, self.email_imap_api, 'an IMAP')
 
 # ################################################################################################################################
 
@@ -412,7 +486,7 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_SECURITY_APIKEY_CREATE(self, msg, *args):
         """ Creates a new API key security definition.
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_APIKEY_CREATE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.APIKEY_CREATE.value, msg)
 
     def on_broker_msg_SECURITY_APIKEY_EDIT(self, msg, *args):
         """ Updates an existing API key security definition.
@@ -443,7 +517,7 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_SECURITY_AWS_CREATE(self, msg, *args):
         """ Creates a new AWS security definition
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_AWS_CREATE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.AWS_CREATE.value, msg)
 
     def on_broker_msg_SECURITY_AWS_EDIT(self, msg, *args):
         """ Updates an existing AWS security definition.
@@ -474,7 +548,7 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_SECURITY_OPENSTACK_CREATE(self, msg, *args):
         """ Creates a new OpenStack security definition
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_OPENSTACK_CREATE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.OPENSTACK_CREATE.value, msg)
 
     def on_broker_msg_SECURITY_OPENSTACK_EDIT(self, msg, *args):
         """ Updates an existing OpenStack security definition.
@@ -505,7 +579,7 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_SECURITY_NTLM_CREATE(self, msg, *args):
         """ Creates a new NTLM security definition
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_NTLM_CREATE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.NTLM_CREATE.value, msg)
 
     def on_broker_msg_SECURITY_NTLM_EDIT(self, msg, *args):
         """ Updates an existing NTLM security definition.
@@ -536,7 +610,7 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_SECURITY_BASIC_AUTH_CREATE(self, msg, *args):
         """ Creates a new HTTP Basic Auth security definition
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_BASIC_AUTH_CREATE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.BASIC_AUTH_CREATE.value, msg)
 
     def on_broker_msg_SECURITY_BASIC_AUTH_EDIT(self, msg, *args):
         """ Updates an existing HTTP Basic Auth security definition.
@@ -567,7 +641,7 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_SECURITY_OAUTH_CREATE(self, msg, *args):
         """ Creates a new OAuth security definition
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_OAUTH_CREATE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.OAUTH_CREATE.value, msg)
 
     def on_broker_msg_SECURITY_OAUTH_EDIT(self, msg, *args):
         """ Updates an existing OAuth security definition.
@@ -597,22 +671,40 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_SECURITY_TECH_ACC_CREATE(self, msg, *args):
         """ Creates a new technical account.
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_TECH_ACC_CREATE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.TECH_ACC_CREATE.value, msg)
 
     def on_broker_msg_SECURITY_TECH_ACC_EDIT(self, msg, *args):
         """ Updates an existing technical account.
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_TECH_ACC_EDIT(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.TECH_ACC_EDIT.value, msg)
 
     def on_broker_msg_SECURITY_TECH_ACC_DELETE(self, msg, *args):
         """ Deletes a technical account.
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_TECH_ACC_DELETE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.TECH_ACC_DELETE.value, msg)
 
     def on_broker_msg_SECURITY_TECH_ACC_CHANGE_PASSWORD(self, msg, *args):
         """ Changes the password of a technical account.
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_TECH_ACC_CHANGE_PASSWORD(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.TECH_ACC_CHANGE_PASSWORD.value, msg)
+
+# ################################################################################################################################
+
+    def update_tls_key_cert(self, msg):
+        _, _, full_path = get_validate_tls_key_cert(self.server.tls_dir, msg.fs_name)
+        msg.full_path = full_path
+
+    def on_broker_msg_SECURITY_TLS_KEY_CERT_CREATE(self, msg):
+        self.update_tls_key_cert(msg)
+        dispatcher.notify(broker_message.SECURITY.TLS_KEY_CERT_CREATE.value, msg)
+
+    def on_broker_msg_SECURITY_TLS_KEY_CERT_EDIT(self, msg):
+        self.update_tls_key_cert(msg)
+        dispatcher.notify(broker_message.SECURITY.TLS_KEY_CERT_EDIT.value, msg)
+
+    def on_broker_msg_SECURITY_TLS_KEY_CERT_DELETE(self, msg):
+        self.update_tls_key_cert(msg)
+        dispatcher.notify(broker_message.SECURITY.TLS_KEY_CERT_DELETE.value, msg)
 
 # ################################################################################################################################
 
@@ -624,7 +716,7 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_SECURITY_WSS_CREATE(self, msg, *args):
         """ Creates a new WS-Security definition.
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_WSS_CREATE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.WSS_CREATE.value, msg)
 
     def on_broker_msg_SECURITY_WSS_EDIT(self, msg, *args):
         """ Updates an existing WS-Security definition.
@@ -656,7 +748,7 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_SECURITY_XPATH_SEC_CREATE(self, msg, *args):
         """ Creates a new XPath security definition
         """
-        self.request_dispatcher.url_data.on_broker_msg_SECURITY_XPATH_SEC_CREATE(msg, *args)
+        dispatcher.notify(broker_message.SECURITY.XPATH_SEC_CREATE.value, msg)
 
     def on_broker_msg_SECURITY_XPATH_SEC_EDIT(self, msg, *args):
         """ Updates an existing XPath security definition.
@@ -675,7 +767,6 @@ class WorkerStore(BrokerMessageReceiver):
         """
         self._update_auth(msg, code_to_name[msg.action], SEC_DEF_TYPE.XPATH_SEC,
                 self._visit_wrapper_change_password)
-
 
 # ################################################################################################################################
 
@@ -876,7 +967,7 @@ class WorkerStore(BrokerMessageReceiver):
         if(stop-start).days:
             for elem1, elem2 in pairwise(elem for elem in rrule(DAILY, dtstart=start, until=stop)):
                 self.broker_client.invoke_async(
-                    {'action':STATS.DELETE_DAY.value, 'start':elem1.isoformat(), 'stop':elem2.isoformat()})
+                    {'action':broker_message.STATS.DELETE_DAY.value, 'start':elem1.isoformat(), 'stop':elem2.isoformat()})
 
                 # So as not to drown the broker with a sudden surge of messages
                 sleep(0.02)
@@ -970,7 +1061,7 @@ class WorkerStore(BrokerMessageReceiver):
             # so the list of patterns will be updated that many times.
 
             msg = {}
-            msg['action'] = SERVICE.PUBLISH.value
+            msg['action'] = broker_message.SERVICE.PUBLISH.value
             msg['service'] = 'zato.http-soap.set-audit-replace-patterns'
             msg['payload'] = {'id':item_id, 'audit_repl_patt_type':MSG_PATTERN_TYPE.JSON_POINTER.id, 'pattern_list':pattern_list}
             msg['cid'] = new_cid()
@@ -1088,30 +1179,30 @@ class WorkerStore(BrokerMessageReceiver):
     def on_broker_msg_NOTIF_RUN_NOTIFIER(self, msg):
         self._on_message_invoke_service(loads(msg.request), CHANNEL.NOTIFIER_RUN, 'NOTIF_RUN_NOTIFIER')
 
+# ################################################################################################################################
+
     def on_broker_msg_NOTIF_CLOUD_OPENSTACK_SWIFT_CREATE_EDIT(self, msg):
-
-        # It might be a rename
-        old_name = msg.get('old_name')
-        del_name = old_name if old_name else msg.name
-
-        config_dict = self.server.worker_store.worker_config.notif_cloud_openstack_swift
-        config_dict.pop(del_name, None) # Delete and ignore if it doesn't exit (it's CREATE then)
-        config_dict[msg.name] = Bunch()
-        config_dict[msg.name].config = msg
-
-        self._update_cloud_openstack_swift_container(msg)
-
-        # Start a new background notifier either if it's a create action or on rename.
-        if msg.source_service_type == 'create' or (old_name and old_name != msg.name):
-
-            self._on_message_invoke_service({
-                'service': 'zato.notif.invoke-run-notifier',
-                'payload': {'config': msg},
-                'cid': new_cid(),
-            }, CHANNEL.NOTIFIER_RUN, 'NOTIF_CLOUD_OPENSTACK_SWIFT_CREATE_EDIT')
+        self.create_edit_notifier(msg, 'NOTIF_CLOUD_OPENSTACK_SWIFT_CREATE_EDIT',
+            self.server.worker_store.worker_config.notif_cloud_openstack_swift, 
+            self._update_cloud_openstack_swift_container)
 
     def on_broker_msg_NOTIF_CLOUD_OPENSTACK_SWIFT_DELETE(self, msg):
         del self.server.worker_store.worker_config.notif_cloud_openstack_swift[msg.name]
+
+# ################################################################################################################################
+
+    def _on_broker_msg_NOTIF_SQL_CREATE_EDIT(self, msg, source_service_type):
+        msg.source_service_type = source_service_type
+        self.create_edit_notifier(msg, 'NOTIF_SQL', self.server.worker_store.worker_config.notif_sql)
+
+    def on_broker_msg_NOTIF_SQL_CREATE(self, msg):
+        self._on_broker_msg_NOTIF_SQL_CREATE_EDIT(msg, 'create')
+
+    def on_broker_msg_NOTIF_SQL_EDIT(self, msg):
+        self._on_broker_msg_NOTIF_SQL_CREATE_EDIT(msg, 'edit')
+
+    def on_broker_msg_NOTIF_SQL_DELETE(self, msg):
+        del self.server.worker_store.worker_config.notif_sql[msg.name]
 
 # ################################################################################################################################
 
@@ -1167,5 +1258,57 @@ class WorkerStore(BrokerMessageReceiver):
 
     def on_broker_msg_SEARCH_ES_DELETE(self, msg):
         self.search_es_api.delete(msg.name)
+
+# ################################################################################################################################
+
+    def on_broker_msg_SEARCH_SOLR_CREATE(self, msg):
+        self._update_queue_build_cap(msg)
+        self.search_solr_api.create(msg.name, msg)
+
+    def on_broker_msg_SEARCH_SOLR_EDIT(self, msg):
+        # It might be a rename
+        old_name = msg.get('old_name')
+        del_name = old_name if old_name else msg['name']
+        self._update_queue_build_cap(msg)
+        self.search_solr_api.edit(del_name, msg)
+
+    def on_broker_msg_SEARCH_SOLR_DELETE(self, msg):
+        self.search_solr_api.delete(msg.name)
+
+# ################################################################################################################################
+
+    def on_broker_msg_EMAIL_SMTP_CREATE(self, msg):
+        self.email_smtp_api.create(msg.name, msg)
+
+    def on_broker_msg_EMAIL_SMTP_EDIT(self, msg):
+        # It might be a rename
+        old_name = msg.get('old_name')
+        del_name = old_name if old_name else msg['name']
+        msg.password = self.email_smtp_api.get(del_name, True).config.password
+        self.email_smtp_api.edit(del_name, msg)
+
+    def on_broker_msg_EMAIL_SMTP_DELETE(self, msg):
+        self.email_smtp_api.delete(msg.name)
+
+    def on_broker_msg_EMAIL_SMTP_CHANGE_PASSWORD(self, msg):
+        self.email_smtp_api.change_password(msg)
+
+# ################################################################################################################################
+
+    def on_broker_msg_EMAIL_IMAP_CREATE(self, msg):
+        self.email_imap_api.create(msg.name, msg)
+
+    def on_broker_msg_EMAIL_IMAP_EDIT(self, msg):
+        # It might be a rename
+        old_name = msg.get('old_name')
+        del_name = old_name if old_name else msg['name']
+        msg.password = self.email_imap_api.get(del_name, True).config.password
+        self.email_imap_api.edit(del_name, msg)
+
+    def on_broker_msg_EMAIL_IMAP_DELETE(self, msg):
+        self.email_imap_api.delete(msg.name)
+
+    def on_broker_msg_EMAIL_IMAP_CHANGE_PASSWORD(self, msg):
+        self.email_imap_api.change_password(msg)
 
 # ################################################################################################################################

@@ -96,6 +96,7 @@ queue_build_cap = 30 # All queue-based connections need to initialize in that ma
 http_proxy=
 locale=
 ensure_sql_connections_exist=True
+http_server_header=Zato
 
 [kvdb]
 host={kvdb_host}
@@ -207,9 +208,10 @@ directories = (
     'config/repo/lua',
     'config/repo/lua/internal',
     'config/repo/lua/user',
+    'config/repo/static',
     'config/repo/tls',
-    'config/repo/tls/keys',
-    'config/repo/tls/certs',
+    'config/repo/tls/keys-certs',
+    'config/repo/tls/partner-certs',
     'config/repo/tls/ca-certs',
 )
 

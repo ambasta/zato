@@ -11,7 +11,9 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # stdlib
 from contextlib import closing
 from inspect import getmodule, isclass
+from itertools import chain
 from logging import getLogger
+from time import time
 from traceback import format_exc
 
 # Bunch
@@ -21,11 +23,14 @@ from bunch import bunchify
 from sqlalchemy import Boolean, Integer
 
 # Zato
+from zato.common import NO_DEFAULT_VALUE
 from zato.common.odb.model import Base, Cluster
 from zato.server.service import Bool as BoolSIO, Int as IntSIO
 from zato.server.service.internal import AdminSIO
 
 logger = getLogger(__name__)
+
+singleton = object()
 
 sa_to_sio = {
     Boolean: BoolSIO,
@@ -36,25 +41,41 @@ req_resp = {
     'Create': 'create',
     'Edit': 'edit',
     'GetList': 'get_list',
-    'Delete': 'delete'
+    'Delete': 'delete',
+    'Ping': 'ping',
 }
 
-def get_io(attrs, elems_name, is_edit, is_required):
+
+def get_io(attrs, elems_name, is_edit, is_required, is_output, is_get_list, has_cluster_id):
 
     # This can be either a list or an SQLAlchemy object
     elems = attrs.get(elems_name) or []
 
-    # Generate elems out of SQLAlchemy tables,
-    # including calls to ForceType's subclasses, such as Bool or Int.
+    # Generate elems out of SQLAlchemy tables, including calls to ForceType's subclasses, such as Bool or Int.
 
     if elems and isclass(elems) and issubclass(elems, Base):
         columns = []
         for column in [elem for elem in elems._sa_class_manager.mapper.mapped_table.columns]:
 
+            # Each model has a cluster_id column but it's not really needed for anything on output
+            if column.name == 'cluster_id' and is_output:
+                continue
+
+            # We already have cluster_id and don't need a ForceType'd one.
+            if column.name == 'cluster_id' and has_cluster_id:
+                continue
+
+            if column.name in attrs.skip_input_params:
+                continue
+
             # We're building SimpleIO.input/output_required here so any nullable columns
             # should not be taken into account. They will be included the next time get_io
             # is called, i.e. to build SimpleIO.input/output_optional.
             if is_required and column.nullable:
+                continue
+
+            # We never return passwords
+            if column.name == 'password' and is_get_list:
                 continue
 
             if column.name == 'id':
@@ -81,14 +102,32 @@ def update_attrs(cls, name, attrs):
     mod = getmodule(cls)
 
     attrs.elem = getattr(mod, 'elem')
+    attrs.label = getattr(mod, 'label')
     attrs.model = getattr(mod, 'model')
     attrs.output_required_extra = getattr(mod, 'output_required_extra', [])
     attrs.output_optional_extra = getattr(mod, 'output_optional_extra', [])
     attrs.get_data_func = getattr(mod, 'list_func')
     attrs.def_needed = getattr(mod, 'def_needed', False)
+    attrs.initial_input = getattr(mod, 'initial_input', {})
+    attrs.skip_input_params = getattr(mod, 'skip_input_params', [])
+    attrs.skip_output_params = getattr(mod, 'skip_output_params', [])
+    attrs.instance_hook = getattr(mod, 'instance_hook', None)
+    attrs.extra_delete_attrs = getattr(mod, 'extra_delete_attrs', [])
+    attrs.input_required_extra = getattr(mod, 'input_required_extra', [])
+    attrs.create_edit_input_required_extra = getattr(mod, 'create_edit_input_required_extra', [])
+    attrs.create_edit_rewrite = getattr(mod, 'create_edit_rewrite', [])
+
+    default_value = getattr(mod, 'default_value', singleton)
+    default_value = NO_DEFAULT_VALUE if default_value is singleton else default_value
+    attrs.default_value = default_value
+
+    attrs.is_edit = False
+    attrs.is_create_edit = False
 
     if name == 'GetList':
+        # get_sio sorts out what is required and what is optional.
         attrs.output_required = attrs.model
+        attrs.output_optional = attrs.model
     else:
 
         attrs.broker_message = getattr(mod, 'broker_message')
@@ -97,8 +136,8 @@ def update_attrs(cls, name, attrs):
         if name in('Create', 'Edit'):
             attrs.input_required = attrs.model
             attrs.input_optional = attrs.model
-            attrs.is_create_edit = True
             attrs.is_edit = name == 'Edit'
+            attrs.is_create_edit = True
 
     return attrs
 
@@ -115,31 +154,44 @@ class AdminServiceMeta(type):
         class SimpleIO(AdminSIO):
             request_elem = 'zato_{}_{}_request'.format(attrs.elem, req_resp[name])
             response_elem = 'zato_{}_{}_response'.format(attrs.elem, req_resp[name])
-            input_required = sio['input_required']
+            input_required = sio['input_required'] + attrs['input_required_extra']
             input_optional = []
             output_required = sio['output_required'] + attrs['output_required_extra']
             output_optional = attrs['output_optional_extra']
+            default_value = attrs.default_value
 
         for io in 'input', 'output':
             for req in 'required', 'optional':
                 _name = '{}_{}'.format(io, req)
-                getattr(SimpleIO, _name).extend(get_io(attrs, _name, attrs.get('is_edit'), 'required' in _name))
+
+                is_required = 'required' in req
+                is_output = 'output' in io
+                is_get_list = name=='GetList'
+
+                sio_elem = getattr(SimpleIO, _name)
+                sio_elem.extend(get_io(attrs, _name, attrs.get('is_edit'), is_required, is_output, is_get_list, 'cluster_id' in sio_elem))
+
+                if attrs.is_create_edit and is_required:
+                    sio_elem.extend(attrs.create_edit_input_required_extra)
+
+                # Sorts and removes duplicates
+                setattr(SimpleIO, _name, sorted(list(set(sio_elem))))
+
+        for skip_name in attrs.skip_output_params:
+            for attr_names in chain([SimpleIO.output_required, SimpleIO.output_optional]):
+                if skip_name in attr_names:
+                    attr_names.remove(skip_name)
 
         return SimpleIO
-
-    def init(cls, cls_meta, attrs, name):
-        attrs = update_attrs(cls, name, attrs)
-        cls.SimpleIO = cls_meta.get_sio(attrs, name)
-        cls.get_data = cls_meta.get_data(attrs.get_data_func)
-        cls.handle = cls_meta.handle()
-
-        return cls
 
 class GetListMeta(AdminServiceMeta):
     """ A metaclass customizing the creation of services returning lists of objects.
     """
     def __init__(cls, name, bases, attrs):
-        cls = AdminServiceMeta.init(cls, GetListMeta, attrs, name)
+        attrs = update_attrs(cls, name, attrs)
+        cls.SimpleIO = GetListMeta.get_sio(attrs, name)
+        cls.handle = GetListMeta.handle(attrs)
+        cls.get_data = GetListMeta.get_data(attrs.get_data_func)
         return super(GetListMeta, cls).__init__(cls)
 
     @staticmethod
@@ -149,7 +201,7 @@ class GetListMeta(AdminServiceMeta):
         return get_data_impl
 
     @staticmethod
-    def handle():
+    def handle(attrs):
         def handle_impl(self):
             with closing(self.odb.session()) as session:
                 self.response.payload[:] = self.get_data(session)
@@ -163,11 +215,13 @@ class CreateEditMeta(AdminServiceMeta):
         attrs = update_attrs(cls, name, attrs)
         cls.SimpleIO = CreateEditMeta.get_sio(attrs, name)
         cls.handle = CreateEditMeta.handle(attrs)
+        return super(CreateEditMeta, cls).__init__(cls)
 
     @staticmethod
     def handle(attrs):
         def handle_impl(self):
             input = self.request.input
+            input.update(attrs.initial_input)
             verb = 'edit' if attrs.is_edit else 'create'
             old_name = None
 
@@ -196,13 +250,19 @@ class CreateEditMeta(AdminServiceMeta):
                     else:
                         instance = attrs.model()
 
-                    instance.fromdict(input, allow_pk=True)
+                    instance.fromdict(input, exclude=['password'], allow_pk=True)
+
+                    # Now that we have an instance which is known not to be a duplicate
+                    # we can possibly invoke a customization function before we commit
+                    # anything to the database.
+                    if attrs.instance_hook:
+                        attrs.instance_hook(self, input, instance, attrs)
 
                     session.add(instance)
                     session.commit()
 
                 except Exception, e:
-                    msg = 'Could not {} a namespace, e:`%s`'.format(verb)
+                    msg = 'Could not {} the object, e:`%s`'.format(verb)
                     self.logger.error(msg, format_exc(e))
                     session.rollback()
                     raise
@@ -217,17 +277,20 @@ class CreateEditMeta(AdminServiceMeta):
                     input.old_name = old_name
                     self.broker_client.publish(input)
 
-                    self.response.payload.id = instance.id
-                    self.response.payload.name = instance.name
+                    for name in chain(attrs.create_edit_rewrite, self.SimpleIO.output_required):
+                        value = getattr(instance, name, singleton)
+                        if value is singleton:
+                            value = input[name]
+
+                        setattr(self.response.payload, name, value)
 
         return handle_impl
 
 class DeleteMeta(AdminServiceMeta):
     def __init__(cls, name, bases, attrs):
         attrs = update_attrs(cls, name, attrs)
-        cls.SimpleIO = GetListMeta.get_sio(attrs, name, ['id'], [])
+        cls.SimpleIO = DeleteMeta.get_sio(attrs, name, ['id'], [])
         cls.handle = DeleteMeta.handle(attrs)
-
         return super(DeleteMeta, cls).__init__(cls)
 
     @staticmethod
@@ -235,11 +298,11 @@ class DeleteMeta(AdminServiceMeta):
         def handle_impl(self):
             with closing(self.odb.session()) as session:
                 try:
-                    auth = session.query(attrs.model).\
+                    instance = session.query(attrs.model).\
                         filter(attrs.model.id==self.request.input.id).\
                         one()
 
-                    session.delete(auth)
+                    session.delete(instance)
                     session.commit()
                 except Exception, e:
                     msg = 'Could not delete {}, e:`%s`'.format(attrs.label)
@@ -249,7 +312,35 @@ class DeleteMeta(AdminServiceMeta):
                     raise
                 else:
                     self.request.input.action = getattr(attrs.broker_message, attrs.broker_message_prefix + 'DELETE').value
-                    self.request.input.name = auth.name
+                    self.request.input.name = instance.name
+
+                    for name in attrs.extra_delete_attrs:
+                        self.request.input[name] = getattr(instance, name)
+
                     self.broker_client.publish(self.request.input)
+
+        return handle_impl
+
+class PingMeta(AdminServiceMeta):
+    def __init__(cls, name, bases, attrs):
+        attrs = update_attrs(cls, name, attrs)
+        cls.SimpleIO = PingMeta.get_sio(attrs, name, ['id'], ['info'])
+        cls.handle = PingMeta.handle(attrs)
+        return super(PingMeta, cls).__init__(cls)
+
+    @staticmethod
+    def handle(attrs):
+        def handle_impl(self):
+            with closing(self.odb.session()) as session:
+                instance = session.query(attrs.model).\
+                    filter(attrs.model.id==self.request.input.id).\
+                    one()
+
+                start_time = time()
+                self.ping(instance)
+                response_time = time() - start_time
+
+                self.response.payload.info = 'Ping issued in {0:03.4f} s, check server logs for details, if any.'.format(
+                    response_time)
 
         return handle_impl

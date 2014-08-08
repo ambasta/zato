@@ -21,10 +21,11 @@ from zato.common import DEFAULT_HTTP_PING_METHOD, DEFAULT_HTTP_POOL_SIZE, HTTP_S
      URL_PARAMS_PRIORITY
 from zato.common.odb.model import AWSS3, APIKeySecurity, AWSSecurity, CassandraConn, CassandraQuery, ChannelAMQP, ChannelWMQ, \
      ChannelZMQ, Cluster, ConnDefAMQP, ConnDefWMQ, CronStyleJob, DeliveryDefinitionBase, Delivery, DeliveryHistory, \
-     DeliveryPayload, ElasticSearch, JSONPointer, HTTPBasicAuth, HTTPSOAP, HTTSOAPAudit, IntervalBasedJob, Job, MsgNamespace, \
-     NotificationOpenStackSwift as NotifOSS, NTLM, OAuth, OpenStackSecurity, OpenStackSwift, OutgoingAMQP, OutgoingFTP, \
-     OutgoingWMQ, OutgoingZMQ, PubSubConsumer, PubSubProducer, PubSubTopic, SecurityBase, Server, Service, SQLConnectionPool, \
-     TechnicalAccount, WSSDefinition, XPath, XPathSecurity
+     DeliveryPayload, ElasticSearch, JSONPointer, HTTPBasicAuth, HTTPSOAP, HTTSOAPAudit, IMAP, IntervalBasedJob, Job, \
+     MsgNamespace, NotificationOpenStackSwift as NotifOSS, NotificationSQL as NotifSQL, NTLM, OAuth, OpenStackSecurity, \
+     OpenStackSwift, OutgoingAMQP, OutgoingFTP, OutgoingWMQ, OutgoingZMQ, PubSubConsumer, PubSubProducer, PubSubTopic, \
+     SecurityBase, Server, Service, SMTP, Solr, SQLConnectionPool, TechnicalAccount, TLSKeyCertSecurity, WSSDefinition, \
+     XPath, XPathSecurity
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +191,19 @@ def tech_acc_list(session, cluster_id, needs_columns=False):
         filter(Cluster.id==cluster_id).\
         filter(Cluster.id==TechnicalAccount.cluster_id).\
         filter(SecurityBase.id==TechnicalAccount.id).\
+        order_by('sec_base.name')
+
+@needs_columns
+def tls_key_cert_list(session, cluster_id, needs_columns=False):
+    """ TLS key/cert pairs.
+    """
+    return session.query(
+        TLSKeyCertSecurity.id, TLSKeyCertSecurity.name,
+        TLSKeyCertSecurity.is_active, TLSKeyCertSecurity.fs_name, TLSKeyCertSecurity.cert_fp,
+        TLSKeyCertSecurity.cert_subject, SecurityBase.sec_type).\
+        filter(Cluster.id==cluster_id).\
+        filter(Cluster.id==TLSKeyCertSecurity.cluster_id).\
+        filter(SecurityBase.id==TLSKeyCertSecurity.id).\
         order_by('sec_base.name')
 
 @needs_columns
@@ -917,8 +931,29 @@ def notif_cloud_openstack_swift_list(session, cluster_id, needs_columns=False):
 
 # ################################################################################################################################
 
+def _notif_sql(session, cluster_id):
+    """ SQL notifications.
+    """
+    return session.query(
+        NotifSQL.id, NotifSQL.is_active, NotifSQL.name, NotifSQL.query,
+        NotifSQL.notif_type, NotifSQL.interval, NotifSQL.def_id,
+        SQLConnectionPool.name.label('def_name'), Service.name.label('service_name')).\
+        filter(Cluster.id==NotifSQL.cluster_id).\
+        filter(SQLConnectionPool.id==NotifSQL.def_id).\
+        filter(Service.id==NotifSQL.service_id).\
+        filter(Cluster.id==cluster_id).\
+        order_by(NotifSQL.name)
+
+@needs_columns
+def notif_sql_list(session, cluster_id, needs_columns=False):
+    """ All the SQL notifications.
+    """
+    return _notif_sql(session, cluster_id)
+
+# ################################################################################################################################
+
 def _search_es(session, cluster_id):
-    """ All the namespaces.
+    """ ElasticSearch connections.
     """
     return session.query(ElasticSearch).\
         filter(Cluster.id==ElasticSearch.cluster_id).\
@@ -930,6 +965,22 @@ def search_es_list(session, cluster_id, needs_columns=False):
     """ All the ElasticSearch connections.
     """
     return _search_es(session, cluster_id)
+
+# ################################################################################################################################
+
+def _search_solr(session, cluster_id):
+    """ Solr sonnections.
+    """
+    return session.query(Solr).\
+        filter(Cluster.id==Solr.cluster_id).\
+        filter(Cluster.id==cluster_id).\
+        order_by(Solr.name)
+
+@needs_columns
+def search_solr_list(session, cluster_id, needs_columns=False):
+    """ All the Solr connections.
+    """
+    return _search_solr(session, cluster_id)
 
 # ################################################################################################################################
 
@@ -994,5 +1045,47 @@ def cassandra_query_list(session, cluster_id, needs_columns=False):
     """ A list of Cassandra prepared statements.
     """
     return _cassandra_query(session, cluster_id)
+
+# ################################################################################################################################
+
+def _email_smtp(session, cluster_id):
+    return session.query(SMTP).\
+        filter(Cluster.id==cluster_id).\
+        filter(Cluster.id==SMTP.cluster_id).\
+        order_by(SMTP.name)
+
+def email_smtp(session, cluster_id, id):
+    """ An SMTP connection.
+    """
+    return _email_smtp(session, cluster_id).\
+        filter(SMTP.id==id).\
+        one()
+
+@needs_columns
+def email_smtp_list(session, cluster_id, needs_columns=False):
+    """ A list of SMTP connections.
+    """
+    return _email_smtp(session, cluster_id)
+
+# ################################################################################################################################
+
+def _email_imap(session, cluster_id):
+    return session.query(IMAP).\
+        filter(Cluster.id==cluster_id).\
+        filter(Cluster.id==IMAP.cluster_id).\
+        order_by(IMAP.name)
+
+def email_imap(session, cluster_id, id):
+    """ An IMAP connection.
+    """
+    return _email_imap(session, cluster_id).\
+        filter(IMAP.id==id).\
+        one()
+
+@needs_columns
+def email_imap_list(session, cluster_id, needs_columns=False):
+    """ A list of IMAP connections.
+    """
+    return _email_imap(session, cluster_id)
 
 # ################################################################################################################################

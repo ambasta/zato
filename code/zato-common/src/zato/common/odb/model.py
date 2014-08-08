@@ -23,7 +23,7 @@ from sqlalchemy.orm import backref, relationship
 
 # Zato
 from zato.common import CASSANDRA, CLOUD, HTTP_SOAP_SERIALIZATION_TYPE, INVOCATION_TARGET, MISC, NOTIF, MSG_PATTERN_TYPE, \
-     PUB_SUB, SCHEDULER
+     PUB_SUB, SCHEDULER, PARAMS_PRIORITY, URL_PARAMS_PRIORITY
 from zato.common.odb import AMQP_DEFAULT_PRIORITY, WMQ_DEFAULT_PRIORITY
 
 Base = declarative_base()
@@ -392,6 +392,19 @@ class XPathSecurity(SecurityBase):
 
 # ################################################################################################################################
 
+class TLSKeyCertSecurity(SecurityBase):
+    """ New in 2.0: Stores information regarding key/cert pairs.
+    """
+    __tablename__ = 'sec_tls_key_cert'
+    __mapper_args__ = {'polymorphic_identity':'tls_key_cert'}
+
+    id = Column(Integer, ForeignKey('sec_base.id'), primary_key=True)
+    fs_name = Column(String(200), nullable=False)
+    cert_fp = Column(String(200), nullable=False)
+    cert_subject = Column(String(1200), nullable=False)
+
+# ################################################################################################################################
+
 class HTTPSOAP(Base):
     """ An incoming or outgoing HTTP/SOAP connection.
     """
@@ -426,10 +439,10 @@ class HTTPSOAP(Base):
     merge_url_params_req = Column(Boolean, nullable=True, default=True)
 
     # New in 2.0
-    url_params_pri = Column(String(200), nullable=True, default='path-over-qs')
+    url_params_pri = Column(String(200), nullable=True, default=URL_PARAMS_PRIORITY.DEFAULT)
 
     # New in 2.0
-    params_pri = Column(String(200), nullable=True, default='channel-params-over-msg')
+    params_pri = Column(String(200), nullable=True, default=PARAMS_PRIORITY.DEFAULT)
     
     # New in 2.0
     audit_enabled = Column(Boolean, nullable=False, default=False)
@@ -1162,7 +1175,7 @@ class DeliveryHistory(Base):
     __tablename__ = 'delivery_history'
 
     id = Column(Integer, Sequence('deliv_payl_seq'), primary_key=True)
-    task_id = Column(String(64), nullable=False, index=True)
+    task_id = Column(String(64), unique=True, nullable=False, index=True)
 
     entry_type = Column(String(64), nullable=False)
     entry_time = Column(DateTime(), nullable=False, index=True)
@@ -1516,14 +1529,14 @@ class Notification(Base):
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     interval = Column(Integer, nullable=False, default=NOTIF.DEFAULT.CHECK_INTERVAL)
-    name_pattern = Column(String(2000), nullable=False, default=NOTIF.DEFAULT.NAME_PATTERN)
-    name_pattern_neg = Column(Boolean(), nullable=False, default=False)
+    name_pattern = Column(String(2000), nullable=True, default=NOTIF.DEFAULT.NAME_PATTERN)
+    name_pattern_neg = Column(Boolean(), nullable=True, default=False)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    get_data = Column(Boolean(), nullable=False, default=False)
-    get_data_patt = Column(String(2000), nullable=False, default=NOTIF.DEFAULT.GET_DATA_PATTERN)
-    get_data_patt_neg = Column(Boolean(), nullable=False, default=False)
+    get_data = Column(Boolean(), nullable=True, default=False)
+    get_data_patt = Column(String(2000), nullable=True, default=NOTIF.DEFAULT.GET_DATA_PATTERN)
+    get_data_patt_neg = Column(Boolean(), nullable=True, default=False)
 
     service_id = Column(Integer, ForeignKey('service.id', ondelete='CASCADE'), nullable=False)
     service = relationship(Service, backref=backref('notification_list', order_by=name, cascade='all, delete, delete-orphan'))
@@ -1540,7 +1553,7 @@ class NotificationOpenStackSwift(Notification):
     __mapper_args__ = {'polymorphic_identity': 'openstack_swift'}
 
     id = Column(Integer, ForeignKey('notif.id'), primary_key=True)
-    
+
     containers = Column(String(20000), nullable=False)
 
     def_id = Column(Integer, ForeignKey('os_swift.id'), primary_key=True)
@@ -1548,6 +1561,21 @@ class NotificationOpenStackSwift(Notification):
 
     def to_json(self):
         return to_json(self)
+
+# ################################################################################################################################
+
+class NotificationSQL(Notification):
+    """ New in 2.0: Stores SQL notifications.
+    """
+    __tablename__ = 'notif_sql'
+    __mapper_args__ = {'polymorphic_identity': 'sql'}
+
+    id = Column(Integer, ForeignKey('notif.id'), primary_key=True)
+
+    query = Column(String(200000), nullable=False)
+
+    def_id = Column(Integer, ForeignKey('sql_pool.id'), primary_key=True)
+    definition = relationship(SQLConnectionPool, backref=backref('notif_sql_list', order_by=id, cascade='all, delete, delete-orphan'))
 
 # ################################################################################################################################
 
@@ -1593,6 +1621,24 @@ class ElasticSearch(Base):
 
 # ################################################################################################################################
 
+class Solr(Base):
+    __tablename__ = 'search_solr'
+    __table_args__ = (UniqueConstraint('name', 'cluster_id'), {})
+
+    id = Column(Integer, Sequence('search_solr_seq'), primary_key=True)
+    name = Column(String(200), nullable=False)
+    is_active = Column(Boolean(), nullable=False, default=True)
+    address = Column(String(400), nullable=False)
+    timeout = Column(Integer(), nullable=False)
+    ping_path = Column(String(40), nullable=False)
+    options = Column(String(800), nullable=True)
+    pool_size = Column(Integer(), nullable=False)
+
+    cluster_id = Column(Integer, ForeignKey('cluster.id', ondelete='CASCADE'), nullable=False)
+    cluster = relationship(Cluster, backref=backref('search_solr_conns', order_by=name, cascade='all, delete, delete-orphan'))
+
+# ################################################################################################################################
+
 class CassandraQuery(Base):
     """ Cassandra query templates.
     """
@@ -1608,4 +1654,50 @@ class CassandraQuery(Base):
     cluster = relationship(Cluster, backref=backref('cassandra_queries', order_by=name, cascade='all, delete, delete-orphan'))
 
     def_id = Column(Integer, ForeignKey('conn_def_cassandra.id', ondelete='CASCADE'), nullable=False)
-    def_ = relationship(CassandraConn, backref=backref('queries', cascade='all, delete, delete-orphan'))
+    def_ = relationship(CassandraConn, backref=backref('cassandra_queries', cascade='all, delete, delete-orphan'))
+
+# ################################################################################################################################
+
+class SMTP(Base):
+    __tablename__ = 'email_smtp'
+    __table_args__ = (UniqueConstraint('name', 'cluster_id'), {})
+
+    id = Column(Integer, Sequence('email_smtp_seq'), primary_key=True)
+    name = Column(String(200), nullable=False)
+    is_active = Column(Boolean(), nullable=False)
+
+    host = Column(String(400), nullable=False)
+    port = Column(Integer(), nullable=False)
+    timeout = Column(Integer(), nullable=False)
+    is_debug = Column(Boolean(), nullable=False)
+    username = Column(String(400), nullable=True)
+    password = Column(String(400), nullable=True)
+    mode = Column(String(20), nullable=False)
+    ping_address = Column(String(200), nullable=False)
+
+    cluster_id = Column(Integer, ForeignKey('cluster.id', ondelete='CASCADE'), nullable=False)
+    cluster = relationship(Cluster, backref=backref('smtp_conns', order_by=name, cascade='all, delete, delete-orphan'))
+
+# ################################################################################################################################
+
+class IMAP(Base):
+    __tablename__ = 'email_imap'
+    __table_args__ = (UniqueConstraint('name', 'cluster_id'), {})
+
+    id = Column(Integer, Sequence('email_imap_seq'), primary_key=True)
+    name = Column(String(200), nullable=False)
+    is_active = Column(Boolean(), nullable=False)
+
+    host = Column(String(400), nullable=False)
+    port = Column(Integer(), nullable=False)
+    timeout = Column(Integer(), nullable=False)
+    debug_level = Column(Integer(), nullable=False)
+    username = Column(String(400), nullable=True)
+    password = Column(String(400), nullable=True)
+    mode = Column(String(20), nullable=False)
+    get_criteria = Column(String(2000), nullable=False)
+
+    cluster_id = Column(Integer, ForeignKey('cluster.id', ondelete='CASCADE'), nullable=False)
+    cluster = relationship(Cluster, backref=backref('imap_conns', order_by=name, cascade='all, delete, delete-orphan'))
+
+# ################################################################################################################################

@@ -68,6 +68,10 @@ class ForceType(object):
             (True, DATA_FORMAT.XML): self.to_xml,
         }
 
+    def __cmp__(self, other):
+        cmp_to = getattr(other, 'name', other)
+        return cmp(self.name, cmp_to)
+
     def __repr__(self):
         return '<{} at {} name:[{}]>'.format(self.__class__.__name__, hex(id(self)), self.name)
 
@@ -259,7 +263,7 @@ class ListOfDicts(ForceType):
 
 # ################################################################################################################################
 
-class Nested(ForceType):
+class Opaque(ForceType):
     """ Allows for embedding arbitrary sub-elements, including simple strings, ForceType or other Nested elements.
     """
 
@@ -270,6 +274,8 @@ class Nested(ForceType):
 
     def __iter__(self):
         return iter(self.args)
+
+Nested = Opaque
 
 # ################################################################################################################################
 
@@ -298,6 +304,13 @@ class ServiceInput(Bunch):
     """
     def deepcopy(self):
         return deepcopy(self)
+
+    def require_any(self, *elems):
+        for name in elems:
+            if self.get(name):
+                break
+        else:
+            raise ValueError('At least one of `{}` is required'.format(elems))
 
 # ################################################################################################################################
 

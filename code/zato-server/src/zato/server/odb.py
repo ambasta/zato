@@ -448,6 +448,12 @@ class ODBManager(SessionWrapper):
         with closing(self.session()) as session:
             return query.tech_acc_list(session, cluster_id, needs_columns)
 
+    def get_tls_key_cert_list(self, cluster_id, needs_columns=False):
+        """ Returns a list of TLS key/cert pairs on the given cluster.
+        """
+        with closing(self.session()) as session:
+            return query.tls_key_cert_list(session, cluster_id, needs_columns)
+
     def get_wss_list(self, cluster_id, needs_columns=False):
         """ Returns a list of WS-Security definitions on the given cluster.
         """
@@ -678,10 +684,17 @@ class ODBManager(SessionWrapper):
 
 # ################################################################################################################################
 
-    def get_notif_cloud_openstack_swift(self, cluster_id, needs_columns=False):
+    def get_notif_cloud_openstack_swift_list(self, cluster_id, needs_columns=False):
         """ Returns a list of OpenStack Swift notification definitions.
         """
         return query.notif_cloud_openstack_swift_list(self._session, cluster_id, needs_columns)
+
+# ################################################################################################################################
+
+    def get_notif_sql_list(self, cluster_id, needs_columns=False):
+        """ Returns a list of SQL notification definitions.
+        """
+        return query.notif_sql_list(self._session, cluster_id, needs_columns)
 
 # ################################################################################################################################
 
@@ -701,5 +714,26 @@ class ODBManager(SessionWrapper):
         """ Returns a list of ElasticSearch connections.
         """
         return query.search_es_list(self._session, cluster_id, needs_columns)
+
+# ################################################################################################################################
+
+    def get_search_solr_list(self, cluster_id, needs_columns=False):
+        """ Returns a list of Solr connections.
+        """
+        return query.search_solr_list(self._session, cluster_id, needs_columns)
+
+# ################################################################################################################################
+
+    def get_email_smtp_list(self, cluster_id, needs_columns=False):
+        """ Returns a list of SMTP connections.
+        """
+        return query.email_smtp_list(self._session, cluster_id, needs_columns)
+
+# ################################################################################################################################
+
+    def get_email_imap_list(self, cluster_id, needs_columns=False):
+        """ Returns a list of IMAP connections.
+        """
+        return query.email_imap_list(self._session, cluster_id, needs_columns)
 
 # ################################################################################################################################

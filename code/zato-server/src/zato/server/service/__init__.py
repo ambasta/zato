@@ -37,6 +37,7 @@ from zato.common.nav import DictNav, ListNav
 from zato.common.util import uncamelify, new_cid, payload_from_request, service_name_from_impl
 from zato.server.connection import request_response, slow_response
 from zato.server.connection.amqp.outgoing import PublisherFacade
+from zato.server.connection.email import EMailAPI
 from zato.server.connection.jms_wmq.outgoing import WMQFacade
 from zato.server.connection.search import SearchAPI
 from zato.server.connection.zmq_.outgoing import ZMQFacade
@@ -45,7 +46,7 @@ from zato.server.service.reqresp import Cloud, Outgoing, Request, Response
 
 # Not used here in this module but it's convenient for callers to be able to import everything from a single namespace
 from zato.server.service.reqresp.sio import AsIs, CSV, Boolean, Dict, Float, ForceType, Integer, List, ListOfDicts, Nested, \
-     Unicode, UTC
+     Opaque, Unicode, UTC
 
 # So pyflakes doesn't complain about names being imported but not used
 AsIs
@@ -58,6 +59,7 @@ Integer
 List
 ListOfDicts
 Nested
+Opaque
 Unicode
 UTC
 
@@ -97,18 +99,22 @@ class TimeUtil(object):
         """
         return arrow.utcnow().format(format)
 
-    def today(self, format='YYYY-MM-DD', tz='UTC'):
+    def today(self, format='YYYY-MM-DD', tz='UTC', needs_format=True):
         """ Returns current day in a given timezone.
         """
         now = arrow.utcnow()
+        today = arrow.Arrow(year=now.year, month=now.month, day=now.day)
 
         if tz != 'UTC':
-            now = now.to(tz)
+            today = today.to(tz)
 
         if format.startswith('kvdb:'):
             format = self.get_format_from_kvdb(format)
 
-        return now.format(format)
+        if needs_format:
+            return today.format(format)
+        else:
+            return today
 
     def reformat(self, value, from_, to):
         """ Reformats value from one datetime format to another, for instance
@@ -244,8 +250,11 @@ class Service(object):
         self.cassandra_conn = self.worker_store.cassandra_api
         self.cassandra_query = self.worker_store.cassandra_query_api
 
+        # E-mail
+        self.email = EMailAPI(self.worker_store.email_smtp_api, self.worker_store.email_imap_api)
+
         # Search
-        self.search = SearchAPI(self.worker_store.search_es_api)
+        self.search = SearchAPI(self.worker_store.search_es_api, self.worker_store.search_solr_api)
 
         is_sio = hasattr(self, 'SimpleIO')
         self.request.http.init(self.wsgi_environ)
@@ -358,7 +367,7 @@ class Service(object):
         """
         return self.invoke_by_impl_name(self.server.service_store.id_to_impl_name[service_id], *args, **kwargs)
 
-    def invoke_async(self, name, payload='', channel=CHANNEL.INVOKE_ASYNC, data_format=None,
+    def invoke_async(self, name, payload='', channel=CHANNEL.INVOKE_ASYNC, data_format=DATA_FORMAT.DICT,
             transport=None, expiration=BROKER.DEFAULT_EXPIRATION, to_json_string=False, cid=None):
         """ Invokes a service asynchronously by its name.
         """

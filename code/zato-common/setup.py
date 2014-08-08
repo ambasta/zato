@@ -12,28 +12,36 @@ from hgdistver import get_version
 from setuptools import find_packages
 
 
-DESC = 'Convenience Python client for Zato ESB and app server (https://zato.io)'
+DESC = (
+    'Convenience Python client for Zato ESB and app '
+    'server (https://zato.io)')
 
 
 setup(
-    name = 'zato-common',
-    version = get_version(),
-    author = 'Zato Developers',
-    author_email = 'info@zato.io',
-    url = 'https://zato.io',
-    license = 'GNU Lesser General Public License v3 (LGPLv3)',
-    platforms = 'OS Independent',
-    description = 'Constants and utils common across the whole of Zato ESB and app server (https://zato.io)',
-    package_dir = {'':'src'},
-    packages = find_packages('src'),
+    name='zato-common',
+    version=get_version(),
+
+    author='Zato Developers',
+    author_email='info@zato.io',
+    url='https://zato.io',
+    license='GNU Lesser General Public License v3 (LGPLv3)',
+    platforms='OS Independent',
+    description=(
+        'Constants and utils common across the whole of Zato ESB '
+        'and app server (https://zato.io)'),
+
+    package_dir={'': 'src'},
+    packages=find_packages('src'),
     scripts = ['bin/zato-py'],
-    namespace_packages = ['zato'],
+    namespace_packages=['zato'],
+
     install_requires=[
         'anyjson>=0.3.3',
+        'alembic==0.6.6',
         'base32-crockford>=0.2.0',
         'boto>=2.29.1',
         'bunch>=1.0.1',
-        'bzr>=2.5',
+        'bzr>=2.6',
         'candv>=1.1.1',
         'ConcurrentLogHandler>=0.9.1',
         'configobj>=5.0.5',
@@ -41,15 +49,18 @@ setup(
         'dictalchemy>=0.1.2.6',
         'distutils2>=1.0a4',
         'gevent>=1.0',
+        'imbox==0.5.5',
         'lxml>=3.3.5',
         'memory-profiler>=0.31',
         'mock>=1.0.1',
         'nose>=1.3.3',
+        'outbox==0.1.8',
         'Paste>=1.7.5.1',
         'pip>=1.5.2',
         'psutil>=2.1.1',
         'psycopg2>=2.5.3',
         'pycrypto>=2.6.1',
+        'pyopenssl==0.14',
         'pyparsing>=2.0.2',
         'python-butler>=0.92',
         'python-dateutil>=2.2',
@@ -64,7 +75,12 @@ setup(
         'WebHelpers>=1.3',
         'zato-redis-paginator',
     ],
-    keywords=('soa eai esb middleware messaging queueing asynchronous integration performance http zeromq framework events agile broker messaging server jms enterprise python middleware clustering amqp nosql websphere mq wmq mqseries ibm amqp zmq'),
+
+    keywords=(
+        'soa eai esb middleware messaging queueing asynchronous integration '
+        'performance http zeromq framework events agile broker messaging '
+        'server jms enterprise python middleware clustering amqp nosql '
+        'websphere mq wmq mqseries ibm amqp zmq'),
     classifiers = [
         'Development Status :: 5 - Production/Stable',
         'Environment :: Console',
@@ -75,7 +91,8 @@ setup(
         'Intended Audience :: Healthcare Industry',
         'Intended Audience :: Information Technology',
         'Intended Audience :: Telecommunications Industry',
-        'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)',
+        ('License :: OSI Approved :: GNU Lesser General '
+            'Public License v3 (LGPLv3)'),
         'Natural Language :: English',
         'Operating System :: OS Independent',
         'Programming Language :: C',

@@ -24,6 +24,7 @@ import cloghandler
 cloghandler = cloghandler # For pyflakes
 
 # gunicorn
+import gunicorn
 from gunicorn.app.base import Application
 
 # Paste
@@ -136,6 +137,9 @@ def run(base_dir, start_gunicorn_app=True):
             config.newrelic.config, config.newrelic.environment or None, config.newrelic.ignore_errors or None,
             config.newrelic.log_file or None, config.newrelic.log_level or None)
 
+    # New in 2.0 - override gunicorn-set Server HTTP header
+    gunicorn.SERVER_SOFTWARE = config.misc.get('http_server_header', 'Zato')
+
     # Store KVDB config in logs, possibly replacing its password if told to
     kvdb_config = get_kvdb_config_for_log(config.kvdb)
     kvdb_logger.info('Master process config `%s`', kvdb_config)
@@ -171,6 +175,7 @@ def run(base_dir, start_gunicorn_app=True):
     parallel_server.port = zato_gunicorn_app.zato_port
     parallel_server.repo_location = repo_location
     parallel_server.base_dir = base_dir
+    parallel_server.tls_dir = os.path.join(parallel_server.base_dir, 'config', 'repo', 'tls')
     parallel_server.fs_server_config = config
     parallel_server.user_config.update(config.user_config_items)
     parallel_server.startup_jobs = app_context.get_object('startup_jobs')
