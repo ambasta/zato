@@ -12,7 +12,9 @@ from hgdistver import get_version
 from setuptools import find_packages
 
 
-DESC = 'Convenience Python client for Zato ESB and app server (https://zato.io)'
+DESC = (
+    'Convenience Python client for Zato ESB and app '
+    'server (https://zato.io)')
 
 
 setup(
@@ -35,6 +37,7 @@ setup(
 
     install_requires=[
         'anyjson>=0.3.3',
+        'alembic==0.6.6',
         'base32-crockford>=0.2.0',
         'boto>=2.29.1',
         'bunch>=1.0.1',
@@ -46,15 +49,18 @@ setup(
         'dictalchemy>=0.1.2.6',
         'distutils2>=1.0a4',
         'gevent>=1.0',
+        'imbox==0.5.5',
         'lxml>=3.3.5',
         'memory-profiler>=0.31',
         'mock>=1.0.1',
         'nose>=1.3.3',
+        'outbox==0.1.8',
         'Paste>=1.7.5.1',
         'pip>=1.5.2',
         'psutil>=2.1.1',
         'psycopg2>=2.5.3',
         'pycrypto>=2.6.1',
+        'pyopenssl==0.14',
         'pyparsing>=2.0.2',
         'python-butler>=0.92',
         'python-dateutil>=2.2',

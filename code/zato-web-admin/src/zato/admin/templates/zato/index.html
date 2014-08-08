@@ -98,7 +98,7 @@
                         <li>
                             <span class="like-a">SSL/TLS &rarr;</span>
                             <ul>
-                                <li><a href="{% url 'security-tls-client-key' %}?cluster={{ cluster_id|default:'' }}">Keys and certificates</a></li>
+                                <li><a href="{% url 'security-tls-key-cert' %}?cluster={{ cluster_id|default:'' }}">Keys and certificates</a></li>
                                 <li><a href="{% url 'message-namespace' %}?cluster={{ cluster_id|default:'' }}">Partner certificates</a></li>
                                 <li><a href="{% url 'message-xpath' %}?cluster={{ cluster_id|default:'' }}">CA certificates</a></li>
                             </ul>
@@ -156,7 +156,7 @@
                                         <li class='wide'><a href="{% url 'notif-cloud-openstack-swift' %}?cluster={{ cluster_id|default:'' }}">OpenStack Swift</a></li>
                                     </ul>
                                 </li>
-                                <li><a href="{% url notif-sql %}?cluster={{ cluster_id|default:'' }}">SQL</a></li>
+                                <li><a href="{% url 'notif-sql' %}?cluster={{ cluster_id|default:'' }}">SQL</a></li>
                             </ul>
                         <li>
                             <span class="like-a">Queries &rarr;</span>
@@ -168,8 +168,8 @@
                         <li>
                             <span class="like-a">E-mail &rarr;</span>
                             <ul>
-                                <li class='wide'><a href="{% url email-imap %}?cluster={{ cluster_id|default:'' }}">IMAP</a></li>
-                                <li class='wide'><a href="{% url email-smtp %}?cluster={{ cluster_id|default:'' }}">SMTP</a></li>
+                                <li class='wide'><a href="{% url 'email-imap' %}?cluster={{ cluster_id|default:'' }}">IMAP</a></li>
+                                <li class='wide'><a href="{% url 'email-smtp' %}?cluster={{ cluster_id|default:'' }}">SMTP</a></li>
                             </ul>
                         </li>
                     </ul>

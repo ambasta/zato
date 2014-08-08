@@ -12,22 +12,24 @@ from hgdistver import get_version
 from setuptools import find_packages
 
 
-DESC = 'Convenience Python client for Zato ESB and app server (https://zato.io)'
+DESC = (
+    'Convenience Python client for Zato ESB and '
+    'app server (https://zato.io)')
 
 
 setup(
-    name = 'zato-server',
-    version = get_version(),
+    name='zato-server',
+    version=get_version(),
 
-    author = 'Zato Developers',
-    author_email = 'info@zato.io',
-    url = 'https://zato.io',
+    author='Zato Developers',
+    author_email='info@zato.io',
+    url='https://zato.io',
 
-    package_dir = {'':'src'},
-    packages = find_packages('src'),
+    package_dir={'': 'src'},
+    packages=find_packages('src'),
 
-    namespace_packages = ['zato'],
-    install_requires = [
+    namespace_packages=['zato'],
+    install_requires=[
         'amqp>=1.4.5',
         'arrow>=0.4.2',
         'blist>=1.3.6',
@@ -49,6 +51,7 @@ setup(
         'pesto>=25',
         'pika>=0.9.13',
         'psycogreen>=1.0',
+        'pysolr==3.2.0',
         'python-swiftclient>=2.1.0',
         'repoze.profile>=2.0',
         'retools>=0.4.1',
@@ -59,5 +62,5 @@ setup(
     ],
     setup_requires=['hgdistver'],
     get_version_from_git=True,
-    zip_safe = False,
+    zip_safe=False,
 )
