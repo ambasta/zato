@@ -1,6 +1,8 @@
---- hgdistver.py	2014-07-04 15:30:56.587811824 +0530
-+++ hgdistver.py.new	2014-07-04 15:32:22.930718945 +0530
-@@ -13,6 +13,8 @@
+diff --git a/home/ubuntu/hgdistver.py b/home/ubuntu/hgdistver.py.new
+index fbd146f..2a902f2 100644
+--- a/home/ubuntu/hgdistver.py
++++ b/home/ubuntu/hgdistver.py.new
+@@ -13,6 +13,8 @@ import sys
  import shlex
  import subprocess
  import datetime
@@ -9,18 +11,25 @@
  
  
  def trace_debug(*k):
-@@ -169,8 +171,9 @@
+@@ -169,13 +171,14 @@ def version_from_hg(root, cachefile=None):
  
  
  def version_from_git(root, cachefile=None):
 -    if not os.path.exists(os.path.join(root, '.git')):
 +    if call(["git", "status"], stderr=STDOUT, stdout=open(os.devnull, 'w')) != 0:
          return
+-    rev_node, _, ret = do_ex('git rev-parse --verify --quiet HEAD', root)
 +
-     rev_node, _, ret = do_ex('git rev-parse --verify --quiet HEAD', root)
++    rev_node, _, ret = do_ex('git rev-list --tags --max-count=1', root)
      if ret:
          return _version('0.0')
-@@ -190,7 +193,7 @@
+     rev_node = rev_node[:7]
+-    out, err, ret = do_ex('git describe --dirty --tags', root)
++    out, err, ret = do_ex('git describe --tags {}'.format(rev_node), root)
+     if '-' not in out and '.' not in out:
+         revs = do('git rev-list HEAD', root)
+         count = revs.count('\n')
+@@ -190,7 +193,7 @@ def version_from_git(root, cachefile=None):
      if '-' not in out:
          return _version(out, node=rev_node, dirty=dirty)
      else:

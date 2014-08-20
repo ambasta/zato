@@ -1,7 +1,7 @@
     {% if item.lb_config %}
     HTTP:
-        <a href="http://{{ item.lb_config.frontend.front_http_plain.bind.address}}:{{ item.lb_config.frontend.front_http_plain.bind.port}}">
-        http://{{ item.lb_config.frontend.front_http_plain.bind.address}}:{{ item.lb_config.frontend.front_http_plain.bind.port}}
+        <a href="http://{{ item.lb_host }}:{{ item.lb_config.frontend.front_http_plain.bind.port}}">
+        http://{{ item.lb_host }}:{{ item.lb_config.frontend.front_http_plain.bind.port}}
         </a>
     {% else %}
         Could not fetch the load balancer's configuration
@@ -30,7 +30,7 @@
     <br/>
     {% if item.lb_config %}
     LB HTTP health-check:
-        <a href="http://{{ item.lb_config.frontend.front_http_plain.bind.address}}:{{ item.lb_config.frontend.front_http_plain.bind.port}}{{ item.lb_config.frontend.front_http_plain.monitor_uri }}">
-        http://{{ item.lb_config.frontend.front_http_plain.bind.address}}:{{ item.lb_config.frontend.front_http_plain.bind.port}}{{ item.lb_config.frontend.front_http_plain.monitor_uri }}
+        <a href="http://{{ item.lb_host }}:{{ item.lb_config.frontend.front_http_plain.bind.port}}{{ item.lb_config.frontend.front_http_plain.monitor_uri }}">
+        http://{{ item.lb_host }}:{{ item.lb_config.frontend.front_http_plain.bind.port}}{{ item.lb_config.frontend.front_http_plain.monitor_uri }}
         </a>
     {% endif %}
